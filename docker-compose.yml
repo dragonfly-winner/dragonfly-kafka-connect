@@ -1,0 +1,77 @@
+version: '0.1'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.5.0
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka
+      - zookeeper
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'kafka:29092'
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: "dragonfly"
+      CONNECT_CONFIG_STORAGE_TOPIC: "__sys_dragonfly_config"
+      CONNECT_OFFSET_STORAGE_TOPIC: "__sys_dragonfly_offset"
+      CONNECT_STATUS_STORAGE_TOPIC: "__sys_dragonfly_status"
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
+      CONNECT_INTERNAL_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_INTERNAL_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/java/plugin
+    volumes:
+      - /Users/yaohangyang/hackthon/kafkaconnect/mount/kafka-connector-plugin:/usr/share/java/plugin
+    command:
+      - bash
+      - -c
+      - |
+        echo "waitting kafka broker"
+        sleep 15 &
+        echo "create topic for kafka connector"
+        kafka-topics --create --bootstrap-server kafka:29092 --replication-factor 1 --partitions 1 --config cleanup.policy=compact --topic __sys_dragonfly_config
+        kafka-topics --create --bootstrap-server kafka:29092 --replication-factor 1 --partitions 1 --config cleanup.policy=compact --topic __sys_dragonfly_offset
+        kafka-topics --create --bootstrap-server kafka:29092 --replication-factor 1 --partitions 1 --config cleanup.policy=compact --topic __sys_dragonfly_status
+        echo "start up kafka connector"
+        /etc/confluent/docker/run 
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    environment:
+      DYNAMIC_CONFIG_ENABLED: true
+    depends_on:
+      - kafka
+      - zookeeper
+    ports:
+      - 8081:8080
+  kafka-sftp:
+    image: atmoz/sftp:latest
+    volumes:
+      - /Users/yaohangyang/hackthon/kafkaconnect/mount/docker-sftp-folder:/home/dragonfly/upload
+    ports:
+      - "9000:22"
+    command: dragonfly:dragonfly:1001
